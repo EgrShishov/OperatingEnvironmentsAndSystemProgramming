@@ -1,14 +1,14 @@
 {
   "Version": 1,
-  "WorkspaceRootPath": "D:\\\u041E\u0421\u0438\u0421\u041F\\Lab1\\CronAnalog\\",
+  "WorkspaceRootPath": "D:\\OSiSP\\Lab1\\CronAnalog\\",
   "Documents": [
     {
-      "AbsoluteMoniker": "D:0:0:{91FCE459-E740-4E2E-AF99-245F399730AA}|CronAnalog\\CronAnalog.vcxproj|D:\\\u041E\u0421\u0438\u0421\u041F\\Lab1\\CronAnalog\\CronAnalog\\task_schedular.cpp||{D0E1A5C6-B359-4E41-9B60-3365922C2A22}",
-      "RelativeMoniker": "D:0:0:{91FCE459-E740-4E2E-AF99-245F399730AA}|CronAnalog\\CronAnalog.vcxproj|solutionrelative:CronAnalog\\task_schedular.cpp||{D0E1A5C6-B359-4E41-9B60-3365922C2A22}"
+      "AbsoluteMoniker": "D:0:0:{91FCE459-E740-4E2E-AF99-245F399730AA}|CronAnalog\\CronAnalog.vcxproj|D:\\OSiSP\\Lab1\\CronAnalog\\CronAnalog\\main.cpp||{D0E1A5C6-B359-4E41-9B60-3365922C2A22}",
+      "RelativeMoniker": "D:0:0:{91FCE459-E740-4E2E-AF99-245F399730AA}|CronAnalog\\CronAnalog.vcxproj|solutionrelative:CronAnalog\\main.cpp||{D0E1A5C6-B359-4E41-9B60-3365922C2A22}"
     },
     {
-      "AbsoluteMoniker": "D:0:0:{91FCE459-E740-4E2E-AF99-245F399730AA}|CronAnalog\\CronAnalog.vcxproj|D:\\\u041E\u0421\u0438\u0421\u041F\\Lab1\\CronAnalog\\CronAnalog\\main.cpp||{D0E1A5C6-B359-4E41-9B60-3365922C2A22}",
-      "RelativeMoniker": "D:0:0:{91FCE459-E740-4E2E-AF99-245F399730AA}|CronAnalog\\CronAnalog.vcxproj|solutionrelative:CronAnalog\\main.cpp||{D0E1A5C6-B359-4E41-9B60-3365922C2A22}"
+      "AbsoluteMoniker": "D:0:0:{91FCE459-E740-4E2E-AF99-245F399730AA}|CronAnalog\\CronAnalog.vcxproj|D:\\OSiSP\\Lab1\\CronAnalog\\CronAnalog\\task_schedular.cpp||{D0E1A5C6-B359-4E41-9B60-3365922C2A22}",
+      "RelativeMoniker": "D:0:0:{91FCE459-E740-4E2E-AF99-245F399730AA}|CronAnalog\\CronAnalog.vcxproj|solutionrelative:CronAnalog\\task_schedular.cpp||{D0E1A5C6-B359-4E41-9B60-3365922C2A22}"
     }
   ],
   "DocumentGroupContainers": [
@@ -18,7 +18,7 @@
       "DocumentGroups": [
         {
           "DockedWidth": 336,
-          "SelectedChildIndex": 3,
+          "SelectedChildIndex": 4,
           "Children": [
             {
               "$type": "Bookmark",
@@ -34,26 +34,26 @@
             },
             {
               "$type": "Document",
-              "DocumentIndex": 0,
+              "DocumentIndex": 1,
               "Title": "task_schedular.cpp",
-              "DocumentMoniker": "D:\\\u041E\u0421\u0438\u0421\u041F\\Lab1\\CronAnalog\\CronAnalog\\task_schedular.cpp",
+              "DocumentMoniker": "D:\\OSiSP\\Lab1\\CronAnalog\\CronAnalog\\task_schedular.cpp",
               "RelativeDocumentMoniker": "CronAnalog\\task_schedular.cpp",
-              "ToolTip": "D:\\\u041E\u0421\u0438\u0421\u041F\\Lab1\\CronAnalog\\CronAnalog\\task_schedular.cpp",
+              "ToolTip": "D:\\OSiSP\\Lab1\\CronAnalog\\CronAnalog\\task_schedular.cpp",
               "RelativeToolTip": "CronAnalog\\task_schedular.cpp",
-              "ViewState": "AQIAAA0AAAAAAAAAAAAQwBwAAAACAAAA",
+              "ViewState": "AQIAAHoAAAAAzMzMzMz+v4oAAAAiAAAA",
               "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000677|",
-              "WhenOpened": "2024-09-13T08:58:39.682Z",
+              "WhenOpened": "2024-09-15T15:03:00.966Z",
               "EditorCaption": ""
             },
             {
               "$type": "Document",
-              "DocumentIndex": 1,
+              "DocumentIndex": 0,
               "Title": "main.cpp",
-              "DocumentMoniker": "D:\\\u041E\u0421\u0438\u0421\u041F\\Lab1\\CronAnalog\\CronAnalog\\main.cpp",
+              "DocumentMoniker": "D:\\OSiSP\\Lab1\\CronAnalog\\CronAnalog\\main.cpp",
               "RelativeDocumentMoniker": "CronAnalog\\main.cpp",
-              "ToolTip": "D:\\\u041E\u0421\u0438\u0421\u041F\\Lab1\\CronAnalog\\CronAnalog\\main.cpp",
+              "ToolTip": "D:\\OSiSP\\Lab1\\CronAnalog\\CronAnalog\\main.cpp",
               "RelativeToolTip": "CronAnalog\\main.cpp",
-              "ViewState": "AQIAAAAAAAAAAAAAAAAAAAIAAAAAAAAA",
+              "ViewState": "AQIAAAAAAAAAAAAAAAAAAAkAAAAsAAAA",
               "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000677|",
               "WhenOpened": "2024-09-12T07:29:41.549Z",
               "EditorCaption": ""
