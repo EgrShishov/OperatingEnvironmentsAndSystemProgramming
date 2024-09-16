@@ -7,15 +7,16 @@
 #include <chrono>
 #include <mutex>
 #include <algorithm>
+#include <regex>
+#include <functional>
 #include <Windows.h>
 
 // maybe change to std::optional?
 struct ScheduleTask {
-	int minute = -1;
-	int hour = -1;
-	int day_of_month = -1;
-	int month = -1;
-	int day_of_week = -1;
+	int minute = 0;
+	int hour = 0;
+	int day_of_month = 0;
+	int month = 0;
 	std::string executable;
 	std::vector<std::string> arguments;
 
@@ -24,7 +25,6 @@ struct ScheduleTask {
 			hour == other.hour &&
 			day_of_month == other.day_of_month &&
 			month == other.month &&
-			day_of_week == other.day_of_week &&
 			executable == other.executable &&
 			arguments == other.arguments;
 	}
@@ -34,36 +34,116 @@ class TaskSchedular {
 
 public:
 
-	TaskSchedular() = default;
+	TaskSchedular() {
 
-	TaskSchedular(const TaskSchedular&) = delete;
+	}
 
-	TaskSchedular& operator=(const TaskSchedular&) = delete;
-
-	static std::vector<ScheduleTask> load_schedule_from_file(const std::string& file_path) {
+	void load_schedule_from_file(const std::string& file_path, std::vector<ScheduleTask>& tasks) {
+		tasks.clear();
 		std::fstream input_file(file_path, std::ios::in | std::ios::out);
+
 		if (!input_file.is_open()) {
 			std::cerr << "Error in opening input file" << std::endl;
-			return std::vector<ScheduleTask>();
 		}
-
-		std::vector<ScheduleTask> tasks;
 		std::string line;
 
 		while (std::getline(input_file, line)) {
-			parse_schedule_string(line, tasks);
+			parse_cron(line, tasks);
 		}
+	}
 
-		return tasks;
+	void parse_cron(const std::string& line, std::vector<ScheduleTask>& tasks) {
+		const std::regex re(R"(((\d\d?-\d\d?)|(\d\d?)|(\*))(\/\d\d?)?)");
+		
+		std::smatch sm;
+
+		std::istringstream iss(line);
+
+		std::string minute;
+		std::string hour;
+		std::string day_of_month;
+		std::string month;
+
+		int minute_initial = 0;
+		int hour_initial = 0;
+		int month_initial = 0;
+		int day_of_month_initial = 0;
+
+		int minute_upper = 60;
+		int hour_upper = 24;
+		int month_upper = 12;
+		int day_of_month_upper = 31;
+
+		int minute_step = 1;
+		int hour_step = 1;
+		int month_step = 1;
+		int day_of_month_step = 1;
+
+		iss >> minute >> hour >> day_of_month >> month ;
+
+		parse_cron_field(minute, minute_initial, minute_upper, minute_step, re);
+		parse_cron_field(hour, hour_initial, hour_upper, hour_step, re);
+		parse_cron_field(day_of_month, day_of_month_initial, day_of_month_upper, day_of_month_step, re);
+		parse_cron_field(month, month_initial, month_upper, month_step, re);
+
+		std::string executable;
+		std::string args;
+		iss >> executable >> args;
+
+		for (int dom = day_of_month_initial; dom <= day_of_month_upper; dom += day_of_month_step) {
+			for (int mon = month_initial; mon <= month_upper; mon += month_step) {
+				for (int h = hour_initial; h <= hour_upper; h += hour_step) {
+					for (int m = minute_initial; m <= minute_upper; m += minute_step) {
+						ScheduleTask task;
+						task.minute = m;
+						task.hour = h;
+						task.day_of_month = dom;
+						task.month = mon;
+						task.executable = executable;
+						task.arguments.push_back(args);
+
+						tasks.push_back(task);
+						/*std::cout << task.minute << " " << task.hour << " " << task.day_of_month << " "
+							<< task.month << " " << std::endl;*/
+					}
+				}
+			}
+		}
+	}
+
+	void parse_cron_field(const std::string& field, int& initial, int& upper, int& step, const std::regex& re) {
+		std::smatch sm;
+		std::regex_search(field, sm, re);
+
+		if (sm.size() != 0) {
+			if (sm[2].matched) {
+				std::string parsed = sm[2].str();
+				initial = std::stoi(parsed.substr(0, parsed.find_first_of('-')));
+				upper = std::stoi(parsed.substr(parsed.find_first_of('-') + 1));
+			}
+			if (sm[3].matched && sm[5].matched) {
+				std::string parsed1 = sm[3].str();
+				std::string parsed2 = sm[5].str();
+
+				initial = std::stoi(parsed1);
+				step = std::stoi(parsed2.substr(parsed2.find_first_of('/') + 1));
+			}
+			else if (sm[3].matched) {
+				std::string parsed = sm[3].str();
+				initial = upper = std::stoi(parsed);
+			}
+			else if (sm[5].matched) {
+				std::string parsed = sm[5].str();
+				step = std::stoi(parsed.substr(parsed.find_first_of('/') + 1));
+			}
+			
+		}
+		//std::cout << "start: " <<  field << " " << initial << " " << upper << " " << step << " ";
 	}
 
 	void run_schedule_tasks(const std::vector<ScheduleTask>& tasks) {
 		SYSTEMTIME current_time;
 		GetLocalTime(&current_time);
-
-		/*for (int i = 0; i < tasks.size(); i++) {
-			std::cout << tasks[i].minute << " " << tasks[i].hour << " " << tasks[i].executable << std::endl;
-		}*/
 
 		for (auto task : tasks) {
 
@@ -130,21 +210,12 @@ private:
 		auto it = std::find(running_tasks.begin(), running_tasks.end(), task);
 
 		if (it != running_tasks.end())
-		{
-			auto el = *it;
-			if (el.day_of_month == -1) return true;
-			if (el.minute == -1) return true;
-			if (el.hour == -1) return true;
-			if (el.day_of_week == -1) return true;
-			if (el.month == -1) return true;
 			return false;
-		}
 
-		if (task.minute != -1 && task.minute != current_time.wMinute) return false;
-		if (task.hour != current_time.wHour && task.hour != -1) return false;
-		if (task.day_of_month != current_time.wDay && task.day_of_month != -1) return false;
-		if (task.month != current_time.wMonth && task.month != -1) return false;
-		if (task.day_of_week != current_time.wDayOfWeek && task.day_of_week != -1) return false;
+		if (task.minute != current_time.wMinute) return false;
+		if (task.hour != current_time.wHour) return false;
+		if (task.day_of_month != current_time.wDay) return false;
+		if (task.month != current_time.wMonth) return false;
 
 		return true;
 	}
@@ -155,219 +226,6 @@ private:
 			log_file << message << std::endl;
 			log_file.close();
 		}
-	}
-
-	static bool parse_schedule_string(const std::string& line, std::vector<ScheduleTask>& tasks) {
-		std::istringstream iss(line); // separate words by ' '
-		std::string arg;
-
-		ScheduleTask task;
-
-		std::vector<ScheduleTask> new_tasks; // if */5
-
-		int field = 0;
-
-		while (iss >> arg) {
-
-			if (field < 5) {
-				if (arg == "*") {
-					switch (field) {
-					case 0:
-					{
-						task.minute = -1;
-						break;
-					}
-					case 1: {
-						task.hour = -1;
-						break;
-					}
-					case 2: {
-						task.day_of_month = -1;
-						break;
-					}
-					case 3: {
-						task.month = -1;
-						break;
-					}
-					case 4: {
-						task.day_of_week = -1;
-						break;
-					}
-					default: break;
-					}
-				}
-				/*else if (arg.find_first_of(",") != std::string::npos) {
-					size_t first_pos = arg.find_first_of(",");
-					size_t last_pos = arg.find_last_of(",");
-
-					std::cout << "arg" << arg;
-
-					std::vector<int> args;
-					size_t pos = 0;
-					std::string arg_copy = arg;
-					std::string token;
-
-					while ((pos = arg_copy.find(',')) != std::string::npos) {
-						token = arg_copy.substr(0, pos);
-						args.push_back(std::stoi(token));  
-						arg_copy.erase(0, pos + 1);
-					}
-
-					args.push_back(std::stoi(arg_copy));
-
-					for (int i = 0; i < args.size(); i++) {
-						std::cout << args[i] << " ";
-					}
-
-					switch (field) {
-					case 0: {
-						for (int i = 0; i < args.size(); i++) {
-							ScheduleTask new_task = task;
-							new_task.minute = args[i];
-							new_tasks.push_back(new_task);
-						}
-						break;
-					}
-					case 1: {
-						for (int i = 0; i < args.size(); i++) {
-							ScheduleTask new_task = task;
-							new_task.hour = args[i];
-							new_tasks.push_back(new_task);
-						}
-						break;
-					}
-					case 2: {
-						for (int i = 0; i < args.size(); i++) {
-							ScheduleTask new_task = task;
-							new_task.day_of_month = args[i];
-							new_tasks.push_back(new_task);
-						}
-						break;
-					}
-					case 3: {
-						for (int i = 0; i < args.size(); i++) {
-							ScheduleTask new_task = task;
-							new_task.month = args[i];
-							new_tasks.push_back(new_task);
-						}
-						break;
-					}
-					case 4: {
-						for (int i = 0; i < args.size(); i++) {
-							ScheduleTask new_task = task;
-							new_task.day_of_week = args[i];
-							new_tasks.push_back(new_task);
-						}
-						break;
-					}
-					default:
-						break;
-					}
-				}*/
-				else if (arg.find_first_of("/") != std::string::npos) {
-					size_t pos = arg.find_first_of("/");
-					int step = std::stoi(arg.substr(pos + 1));
-					int value = arg.substr(0, pos) == "*" ? 0 : std::stoi(arg.substr(0, pos));
-
-					switch (field) {
-						case 0: { // Minute
-							for (int i = value; i < 60; i += step) {
-								ScheduleTask new_task = task;
-								new_task.minute = i;
-								new_tasks.push_back(new_task);
-							}
-							break;
-						}
-						case 1: { // Hour
-							for (int i = value; i < 24; i += step) {
-								ScheduleTask new_task = task;
-								new_task.hour = i;
-								new_tasks.push_back(new_task);
-							}
-							break;
-						}
-						case 2: { // Day of month
-							for (int i = value; i <= 31; i += step) {
-								ScheduleTask new_task = task;
-								new_task.day_of_month = i;
-								new_tasks.push_back(new_task);
-							}
-							break;
-						}
-						case 3: { // Month
-							for (int i = value; i <= 12; i += step) {
-								ScheduleTask new_task = task;
-								new_task.month = i;
-								new_tasks.push_back(new_task);
-							}
-							break;
-						}
-						case 4: { // Day of week
-							for (int i = value; i < 7; i += step) {
-								ScheduleTask new_task = task;
-								new_task.day_of_week = i + 1;
-								new_tasks.push_back(new_task);
-							}
-							break;
-						}
-						default: break;
-					}
-				}
-				else {
-					int value = std::stoi(arg);
-
-					switch (field) {
-					case 0:
-						task.minute = value;
-						break;
-					case 1:
-						task.hour = value;
-						break;
-					case 2:
-						task.day_of_month = value;
-						break;
-					case 3:
-						task.month = value;
-						break;
-					case 4:
-						task.day_of_week = value;
-						break;
-					default: break;
-					}
-				}
-			}
-			// parametrs and args 
-			else {
-				if (field == 5) {
-					if (!new_tasks.empty()) {
-						for (ScheduleTask& task : new_tasks) {
-							task.executable = arg;
-						}
-					} else
-						task.executable = arg;
-				}
-				else {
-					if (!new_tasks.empty()) {
-						for (ScheduleTask& task : new_tasks) {
-							task.arguments.push_back(arg);
-						}
-					} else
-						task.arguments.push_back(arg);
-				}
-			}
-			field++;
-		}
-
-		if (!new_tasks.empty()) {
-			for (ScheduleTask& t : new_tasks) {
-				tasks.push_back(t);
-			}
-		}
-		else {
-			tasks.push_back(task);
-		}
-
-		return true;
 	}
 
 	static bool run_task(const std::string& executable, const std::vector<std::string>& args) {
