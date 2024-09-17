@@ -8,8 +8,8 @@
 
 struct Record {
     int id;
-    std::string name;
-    std::string surname;
+    char name[60];
+    char surname[60];
     int age;
     bool is_married;
 
@@ -30,7 +30,7 @@ class DirectAccessFileDb {
 
 public:
 
-    DirectAccessFileDb(const std::string& file_name, size_t initial) {
+    DirectAccessFileDb(const std::string& file_name, size_t initial) : file_name(file_name) {
         hFile = CreateFile(
             CastToLPCWSTR(file_name),
             GENERIC_READ | GENERIC_WRITE,
@@ -45,11 +45,14 @@ public:
             exit(1);
         }
 
-        SetFilePointer(hFile, 1024, NULL, FILE_BEGIN);
-        SetEndOfFile(hFile);
-
         DWORD dwFileSize = GetFileSize(hFile, nullptr);
-        if (dwFileSize == INVALID_FILE_SIZE || dwFileSize == 0) {
+
+        if (dwFileSize == 0) {
+            SetFilePointer(hFile, initial, NULL, FILE_BEGIN);
+            SetEndOfFile(hFile);
+        }
+
+        if (dwFileSize == INVALID_FILE_SIZE) {
             std::cerr << "Ошибка размера файла: " << GetLastError() << std::endl;
             exit(1);
         }
@@ -84,50 +87,54 @@ public:
     }
 
     ~DirectAccessFileDb() {
-        UnmapViewOfFile(hMapping);
+        UnmapViewOfFile(metadata);
         CloseHandle(hFile);
         CloseHandle(hMapping);
-        delete metadata;
-        delete records;
     }
 
     void write_record(int index, const Record& record) {
-        if (index * RECORD_SIZE + METADATA_SIZE >= metadata->file_size) {
-            std::cerr << "Недостаточно места для записи" << std::endl;
-            return;
+        if (index < 0 || (index + 1) * RECORD_SIZE + METADATA_SIZE > metadata->file_size) {
+            expand((index + 1) * RECORD_SIZE + METADATA_SIZE);
         }
 
-        records[index] = record;
+        if (records[index].is_deleted) {
+            records[index] = record;
+        }
+
+        records[metadata->free_list_head_index] = record;
+
         metadata->records_count++;
         metadata->free_list_head_index = index + 1;
     }
 
-    Record read_record(int index) {
-        if (index * RECORD_SIZE + METADATA_SIZE >= metadata->file_size) {
-            std::cerr << "Индекс вышел за пределы файла" << std::endl;
+    Record* read_record(int index) {
+        if (index < 0 || (index + 1) * RECORD_SIZE + METADATA_SIZE > metadata->file_size) {
+            //std::cerr << "Индекс вышел за пределы файла" << std::endl;
+            return nullptr;
         }
 
-        Record record;
-        DWORD bytes_readed;
-        record = records[index];
+        Record* record = &records[index];
+        if (record->is_deleted) {
+            return nullptr;
+        }
+
         return record;
     }
 
     bool delete_record(int index) {
-        if (index * RECORD_SIZE + METADATA_SIZE >= metadata->file_size) {
+        if (index < 0 || (index + 1) * RECORD_SIZE + METADATA_SIZE > metadata->file_size) {
             std::cerr << "Индекс вышел за пределы файла" << std::endl;
             return false;
         }
 
-        Record record = records[index];
-        record.is_deleted = true;
-        record.next_free_index = metadata->free_list_head_index;
+        records[index].is_deleted = true;
+        records[index].next_free_index = metadata->free_list_head_index;
         metadata->records_count--;
         metadata->free_list_head_index = index;
     }
 
     Record* async_read_record(int index, OVERLAPPED& overlapped) {
-        if (index * RECORD_SIZE + METADATA_SIZE >= metadata->file_size) {
+        if (index < 0 || index >= metadata->records_count) {
             std::cerr << "Индекс вышел за пределы файла" << std::endl;
             return nullptr;
         }
@@ -141,7 +148,7 @@ public:
     }
 
     bool async_write_record(int index, const Record& record, OVERLAPPED& overlapped) {
-        if (index * RECORD_SIZE + METADATA_SIZE >= metadata->file_size) {
+        if (index < 0 || index >= metadata->records_count) {
             std::cerr << "Индекс вышел за пределы файла" << std::endl;
             return false;
         }
@@ -153,28 +160,98 @@ public:
     }
 
     void expand(size_t new_size) {
-        UnmapViewOfFile(metadata);
+        if (!UnmapViewOfFile(metadata)) {
+            std::cerr << "Ошибка отображения файла при расширении: " << GetLastError() << std::endl;
+            return;
+        }
         CloseHandle(hMapping);
 
         SetFilePointer(hFile, new_size, nullptr, FILE_BEGIN);
         SetEndOfFile(hFile);
         
         hMapping = CreateFileMapping(hFile, nullptr, PAGE_READWRITE, 0, 0, nullptr);
-        metadata = static_cast<Metadata*>(MapViewOfFile(hMapping, FILE_MAP_ALL_ACCESS, 0, 0, 0));
-        records = reinterpret_cast<Record*>(reinterpret_cast<char*>(metadata) + METADATA_SIZE);
+        if (!hMapping) {
+            std::cerr << "Ошибка создания отображения файла при расширении: " << GetLastError() << std::endl;
+            return;
+        }
+
+        void* map_view = MapViewOfFile(hMapping, FILE_MAP_ALL_ACCESS, 0, 0, 0);
+        if (!map_view) {
+            std::cerr << "Ошибка отображения файла в память при расширении: " << GetLastError() << std::endl;
+            return;
+        }
+
+        metadata = static_cast<Metadata*>(map_view);
+        records = reinterpret_cast<Record*>(static_cast<char*>(map_view) + METADATA_SIZE);
+
+        if (!metadata) {
+            std::cerr << "Ошибка получения метаданных при расширении: " << GetLastError() << std::endl;
+            return;
+        }
+        if (!records) {
+            std::cerr << "Ошибка получения указателя на записи после расширения: " << GetLastError() << std::endl;
+            return;
+        }
         metadata->file_size = new_size;
     }
 
     bool defragmentate_file() {
+        HANDLE hTempFile = CreateFile(
+            CastToLPCWSTR("temp.bin"),
+            GENERIC_WRITE,
+            0,
+            nullptr,
+            CREATE_ALWAYS,
+            FILE_ATTRIBUTE_NORMAL,
+            nullptr
+        );
 
+        if (!hTempFile) {
+            std::cerr << "Ошибка создания временного файла: " << GetLastError() << std::endl;
+            return false;
+        }
+
+        DWORD bytes_read, bytes_written;
+        int index = 0;
+        Record record;
+
+        SetFilePointer(hFile, 0, nullptr, FILE_BEGIN);
+        while (ReadFile(hFile, &record, RECORD_SIZE, &bytes_read, nullptr)
+            && bytes_read == RECORD_SIZE) {
+            if (!record.is_deleted) {
+                SetFilePointer(hTempFile, index * RECORD_SIZE, nullptr, FILE_BEGIN);
+                WriteFile(hTempFile, &record, RECORD_SIZE, &bytes_written, nullptr);
+                index++;
+            }
+        }
+
+        CloseHandle(hTempFile);
+        CloseHandle(hFile);
+
+        DeleteFile(CastToLPCWSTR(file_name));
+        MoveFile(CastToLPCWSTR("temp.bin"), CastToLPCWSTR(file_name));
+
+        hFile = CreateFile(
+            CastToLPCWSTR(file_name),
+            GENERIC_READ | GENERIC_WRITE,
+            0,
+            nullptr,
+            OPEN_ALWAYS,
+            FILE_ATTRIBUTE_NORMAL,
+            nullptr);
+
+        return true;
     }
 
-    bool compress_file() {
+    size_t get_records_size() {
+        return metadata->records_count;
+    }
 
+    bool ensure_deleted() {
+        return DeleteFile(CastToLPCWSTR(file_name));
     }
 
 private:
-
     LPCWSTR CastToLPCWSTR(const std::string& str) {
         int length = MultiByteToWideChar(CP_ACP, 0, str.c_str(), -1, NULL, 0);
         wchar_t* wideStr = new wchar_t[length];
@@ -183,6 +260,7 @@ private:
         return lpcwstr;
     }
 
+    std::string file_name;
     HANDLE hFile, hMapping;
     Metadata* metadata;
     Record* records;
@@ -193,10 +271,39 @@ int main()
 {
     setlocale(LC_ALL, "Ru");
     DirectAccessFileDb db = DirectAccessFileDb("database", 1024);
-    Record record = { 1, "egor", "shishov", 19, false};
 
-    db.write_record(0, record);
-    auto readed = db.read_record(0);
-    std::cout << readed.age << " " << readed.surname << " " << readed.name << " " << readed.id;
+    //std::cout << sizeof(Record);
+    //for (int i = 0; i < 200; i++) {
+    //    db.write_record(i, Record{ i, "Test", "User", i, false });
+    //}
+    //db.delete_record(202);
+    //db.delete_record(203);
+    //db.delete_record(204);
+    //db.delete_record(205);
+    //db.write_record(1, Record{ 201, "Test", "User", 201, false });
+    //std::cout << "records count: " << db.get_records_size() << std::endl;
+    for (int i = 0; i < db.get_records_size(); i++) {
+        //db.delete_record(i);
+        Record* record = db.read_record(i);
+        if (record != nullptr) {
+            std::cout << record->id << std::endl;
+        }
+    }
+
+
+   /* for (int i = 0; i < db.get_records_size(); i++) {
+        OVERLAPPED overlapped = { 0 };
+        overlapped.Offset = i * RECORD_SIZE + METADATA_SIZE;
+        overlapped.hEvent = CreateEvent(nullptr, TRUE, FALSE, nullptr);
+        auto record = db.async_read_record(i, overlapped);
+        std::cout << record->age << std::endl;
+    }
+
+    OVERLAPPED overlapped = { 0 };
+    overlapped.Offset = 8 * RECORD_SIZE + METADATA_SIZE;
+    overlapped.hEvent = CreateEvent(nullptr, TRUE, FALSE, nullptr);
+    db.async_write_record(8, Record{ 201, "Test", "User", 201, false }, overlapped);*/
+
+    std::cout << "records count: " << db.get_records_size() << std::endl;
     return 0;
 }
