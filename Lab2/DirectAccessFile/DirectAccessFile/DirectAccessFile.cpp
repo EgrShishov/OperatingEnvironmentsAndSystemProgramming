@@ -4,6 +4,7 @@
 #include <fcntl.h>
 #include <cstring>
 #include <utility>
+#include <chrono>
 #include <Windows.h>
 
 struct Record {
@@ -47,14 +48,9 @@ public:
 
         DWORD dwFileSize = GetFileSize(hFile, nullptr);
 
-        if (dwFileSize == 0) {
+        if (dwFileSize == 0 || dwFileSize == INVALID_FILE_SIZE) {
             SetFilePointer(hFile, initial, NULL, FILE_BEGIN);
             SetEndOfFile(hFile);
-        }
-
-        if (dwFileSize == INVALID_FILE_SIZE) {
-            std::cerr << "Ошибка размера файла: " << GetLastError() << std::endl;
-            exit(1);
         }
 
         hMapping = CreateFileMapping(
@@ -82,7 +78,7 @@ public:
         if (metadata->file_size == 0) {
             metadata->records_count = 0;
             metadata->free_list_head_index = -1;
-            metadata->file_size = initial;
+            metadata->file_size = dwFileSize;
         }
     }
 
@@ -94,22 +90,23 @@ public:
 
     void write_record(int index, const Record& record) {
         if (index < 0 || (index + 1) * RECORD_SIZE + METADATA_SIZE > metadata->file_size) {
-            expand((index + 1) * RECORD_SIZE + METADATA_SIZE);
+            if (!expand((index + 1) * RECORD_SIZE + METADATA_SIZE)) {
+                return;
+            }
         }
 
         if (records[index].is_deleted) {
-            records[index] = record;
+            records[index].is_deleted = false;
         }
 
-        records[metadata->free_list_head_index] = record;
-
+        records[index] = record;
         metadata->records_count++;
         metadata->free_list_head_index = index + 1;
     }
 
     Record* read_record(int index) {
         if (index < 0 || (index + 1) * RECORD_SIZE + METADATA_SIZE > metadata->file_size) {
-            //std::cerr << "Индекс вышел за пределы файла" << std::endl;
+            std::cerr << "Индекс вышел за пределы файла" << std::endl;
             return nullptr;
         }
 
@@ -133,36 +130,45 @@ public:
         metadata->free_list_head_index = index;
     }
 
-    Record* async_read_record(int index, OVERLAPPED& overlapped) {
-        if (index < 0 || index >= metadata->records_count) {
+    Record* async_read_record(int index, OVERLAPPED& overlapped) { // some problems
+        if (index < 0 || (index + 1) * RECORD_SIZE + METADATA_SIZE > metadata->file_size) {
             std::cerr << "Индекс вышел за пределы файла" << std::endl;
             return nullptr;
         }
 
-        char buffer[RECORD_SIZE];
-        ReadFile(hFile, buffer, RECORD_SIZE, nullptr, &overlapped);
+        DWORD bytes_read;
+        char* buffer = new char[RECORD_SIZE];
+        bool succeed = ReadFile(hFile, buffer, RECORD_SIZE, &bytes_read, &overlapped);
         WaitForSingleObject(overlapped.hEvent, INFINITE);
 
-        Record* record = reinterpret_cast<Record*>(buffer);
-        return record;
+        if (!GetOverlappedResult(hFile, &overlapped, &bytes_read, TRUE)) {
+            std::cerr << "Ошибка получения результата чтения: " << GetLastError() << std::endl;
+            CloseHandle(overlapped.hEvent);
+            delete[] buffer;
+            return nullptr;
+        }
+
+        return reinterpret_cast<Record*>(buffer);
     }
 
     bool async_write_record(int index, const Record& record, OVERLAPPED& overlapped) {
-        if (index < 0 || index >= metadata->records_count) {
-            std::cerr << "Индекс вышел за пределы файла" << std::endl;
-            return false;
+        if (index < 0 || (index + 1) * RECORD_SIZE + METADATA_SIZE > metadata->file_size) {
+            if (!expand((index + 1) * RECORD_SIZE + METADATA_SIZE)) {
+                return false;
+            }
         }
         
-        WriteFile(hFile, &record, RECORD_SIZE, nullptr, &overlapped);
+        DWORD bytes_written;
+        WriteFile(hFile, &record, RECORD_SIZE, &bytes_written, &overlapped);
         WaitForSingleObject(overlapped.hEvent, INFINITE);
-
-        return true;
+        metadata->records_count++;
+        return bytes_written;
     }
 
-    void expand(size_t new_size) {
+    bool expand(size_t new_size) {
         if (!UnmapViewOfFile(metadata)) {
             std::cerr << "Ошибка отображения файла при расширении: " << GetLastError() << std::endl;
-            return;
+            return false;
         }
         CloseHandle(hMapping);
 
@@ -172,13 +178,13 @@ public:
         hMapping = CreateFileMapping(hFile, nullptr, PAGE_READWRITE, 0, 0, nullptr);
         if (!hMapping) {
             std::cerr << "Ошибка создания отображения файла при расширении: " << GetLastError() << std::endl;
-            return;
+            return false;
         }
 
         void* map_view = MapViewOfFile(hMapping, FILE_MAP_ALL_ACCESS, 0, 0, 0);
         if (!map_view) {
             std::cerr << "Ошибка отображения файла в память при расширении: " << GetLastError() << std::endl;
-            return;
+            return false;
         }
 
         metadata = static_cast<Metadata*>(map_view);
@@ -186,13 +192,14 @@ public:
 
         if (!metadata) {
             std::cerr << "Ошибка получения метаданных при расширении: " << GetLastError() << std::endl;
-            return;
+            return false;
         }
         if (!records) {
             std::cerr << "Ошибка получения указателя на записи после расширения: " << GetLastError() << std::endl;
-            return;
+            return false;
         }
         metadata->file_size = new_size;
+        return true;
     }
 
     bool defragmentate_file() {
@@ -251,6 +258,10 @@ public:
         return DeleteFile(CastToLPCWSTR(file_name));
     }
 
+    bool ensure_created() {
+
+    }
+
 private:
     LPCWSTR CastToLPCWSTR(const std::string& str) {
         int length = MultiByteToWideChar(CP_ACP, 0, str.c_str(), -1, NULL, 0);
@@ -272,38 +283,63 @@ int main()
     setlocale(LC_ALL, "Ru");
     DirectAccessFileDb db = DirectAccessFileDb("database", 1024);
 
-    //std::cout << sizeof(Record);
-    //for (int i = 0; i < 200; i++) {
-    //    db.write_record(i, Record{ i, "Test", "User", i, false });
-    //}
-    //db.delete_record(202);
-    //db.delete_record(203);
-    //db.delete_record(204);
-    //db.delete_record(205);
-    //db.write_record(1, Record{ 201, "Test", "User", 201, false });
-    //std::cout << "records count: " << db.get_records_size() << std::endl;
-    for (int i = 0; i < db.get_records_size(); i++) {
-        //db.delete_record(i);
-        Record* record = db.read_record(i);
-        if (record != nullptr) {
-            std::cout << record->id << std::endl;
-        }
+    auto sync_write_start_time = std::chrono::high_resolution_clock::now();
+
+    for (int i = 0; i < 1000; i++) {
+        db.write_record(i,Record{ i, "Test", "User", i, false });
     }
 
+    auto sync_write_end_time = std::chrono::high_resolution_clock::now();
+    auto sync_write_elapsed = std::chrono::duration_cast<std::chrono::microseconds>(sync_write_end_time - sync_write_start_time).count();
+    std::cout << "Sync write in ms: " << sync_write_elapsed << std::endl;
 
-   /* for (int i = 0; i < db.get_records_size(); i++) {
+    auto sync_read_start_time = std::chrono::high_resolution_clock::now();
+
+    for (int i = 0; i < db.get_records_size(); i++) {
+        Record* record = db.read_record(i);
+        if (record != nullptr) {
+            //std::cout << record->id << std::endl;
+        }
+    }
+    auto sync_read_end_time = std::chrono::high_resolution_clock::now();
+    auto sync_read_elapsed = std::chrono::duration_cast<std::chrono::microseconds>(sync_read_end_time - sync_read_start_time).count();
+    std::cout << "Sync read in ms: " << sync_read_elapsed << std::endl;
+
+    DirectAccessFileDb db2 = DirectAccessFileDb("database2", 1024);
+
+    auto async_write_start_time = std::chrono::high_resolution_clock::now();
+
+    for (int i = 0; i < 1000; i++) {
         OVERLAPPED overlapped = { 0 };
         overlapped.Offset = i * RECORD_SIZE + METADATA_SIZE;
         overlapped.hEvent = CreateEvent(nullptr, TRUE, FALSE, nullptr);
-        auto record = db.async_read_record(i, overlapped);
-        std::cout << record->age << std::endl;
+        db2.async_write_record(i, Record{ i, "Test", "User", i, false }, overlapped);
+        CloseHandle(overlapped.hEvent);
     }
 
-    OVERLAPPED overlapped = { 0 };
-    overlapped.Offset = 8 * RECORD_SIZE + METADATA_SIZE;
-    overlapped.hEvent = CreateEvent(nullptr, TRUE, FALSE, nullptr);
-    db.async_write_record(8, Record{ 201, "Test", "User", 201, false }, overlapped);*/
+    auto async_write_end_time = std::chrono::high_resolution_clock::now();
+    auto async_write_elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(async_write_end_time - async_write_start_time).count();
+    std::cout << "Async writing operation in ms: " << async_write_elapsed << std::endl;
 
-    std::cout << "records count: " << db.get_records_size() << std::endl;
+    auto async_read_start_time = std::chrono::high_resolution_clock::now();
+    std::cout << db2.get_records_size() << std::endl;
+    for (int i = 0; i < db2.get_records_size(); i++) {
+        OVERLAPPED overlapped = { 0 };
+        overlapped.Offset = i * RECORD_SIZE + METADATA_SIZE;
+        overlapped.hEvent = CreateEvent(nullptr, TRUE, FALSE, nullptr);
+        if (!overlapped.hEvent) {
+            std::cerr << "Ошибка создания события: " << GetLastError() << std::endl;
+            continue;
+        }
+        auto record = db2.async_read_record(i, overlapped);
+        if (record != nullptr) {
+        }
+        CloseHandle(overlapped.hEvent);
+    }
+
+    auto async_read_end_time = std::chrono::high_resolution_clock::now();
+    auto async_read_elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(async_read_end_time - async_read_start_time).count();
+    std::cout << "Async reading operation in ms: " << async_read_elapsed << std::endl;
+
     return 0;
 }
