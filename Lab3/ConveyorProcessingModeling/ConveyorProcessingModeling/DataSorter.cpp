@@ -9,14 +9,16 @@ class DataSorter {
 
 public:
 	DataSorter() {
-		hGenPipe = CreateFile(
-			convert_to_LPCWSTR(gen_pipe_name),
-			GENERIC_READ,
-			0,
-			nullptr,
-			OPEN_EXISTING,
-			0,
-			nullptr);
+		//hGenPipe = CreateFile(
+		//	convert_to_LPCWSTR(gen_pipe_name),
+		//	GENERIC_READ,
+		//	0,
+		//	nullptr,
+		//	OPEN_EXISTING,
+		//	0,
+		//	nullptr);
+
+		hGenPipe = GetStdHandle(STD_INPUT_HANDLE);
 
 		if (hGenPipe == INVALID_HANDLE_VALUE) {
 			std::cerr << "Ошибка в подключении канала к генератору данных: " << GetLastError() << std::endl;
@@ -27,7 +29,10 @@ public:
 	void get_and_sort_data() {
 		std::vector<int> data (100);
 		DWORD bytes_read;
-		ReadFile(hGenPipe, data.data(), data.size() * sizeof(int), &bytes_read, nullptr);
+		if (!ReadFile(hGenPipe, data.data(), data.size() * sizeof(int), &bytes_read, nullptr)) {
+			std::cerr << "Ошибка в чтении данных: " << GetLastError() << std::endl;
+			return;
+		}
 
 		if (bytes_read != 0) {
 			std::cout << "Получено " << bytes_read << " данных от генератора" << std::endl;
