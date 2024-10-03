@@ -277,69 +277,127 @@ private:
     Record* records;
 };
 
+void show_menu() {
+    std::cout << "============================" << std::endl;
+    std::cout << "     Direct Access DB Menu   " << std::endl;
+    std::cout << "============================" << std::endl;
+    std::cout << "1. Add a record" << std::endl;
+    std::cout << "2. Display all records" << std::endl;
+    std::cout << "3. Delete a record" << std::endl;
+    std::cout << "4. Performance test (Sync vs Async)" << std::endl;
+    std::cout << "5. Exit" << std::endl;
+    std::cout << "============================" << std::endl;
+    std::cout << "Choose an option: ";
+}
+
+void add_record(DirectAccessFileDb& db) {
+    Record record;
+    std::cout << "Enter ID: ";
+    std::cin >> record.id;
+    std::cin.ignore();
+    std::cout << "Enter Name: ";
+    std::cin.getline(record.name, 60);
+    std::cout << "Enter Surname: ";
+    std::cin.getline(record.surname, 60);
+    std::cout << "Enter Age: ";
+    std::cin >> record.age;
+    std::cout << "Is Married? (1 for Yes, 0 for No): ";
+    std::cin >> record.is_married;
+
+    db.write_record(record.id, record);
+    std::cout << "Record added successfully!" << std::endl;
+}
+
+void display_records(DirectAccessFileDb& db) {
+    for (int i = 0; i < db.get_records_size(); i++) {
+        Record* record = db.read_record(i);
+        if (record != nullptr) {
+            std::cout << "ID: " << record->id
+                << ", Name: " << record->name
+                << ", Surname: " << record->surname
+                << ", Age: " << record->age
+                << ", Married: " << (record->is_married ? "Yes" : "No")
+                << std::endl;
+        }
+    }
+}
+
+void delete_record(DirectAccessFileDb& db) {
+    int id;
+    std::cout << "Enter ID of the record to delete: ";
+    std::cin >> id;
+    if (db.delete_record(id)) {
+        std::cout << "Record deleted successfully!" << std::endl;
+    }
+    else {
+        std::cout << "Failed to delete record." << std::endl;
+    }
+}
+
+void performance_test(DirectAccessFileDb& db, DirectAccessFileDb& db_async) {
+    std::cout << "Running sync vs async performance tests..." << std::endl;
+
+    auto sync_write_start_time = std::chrono::high_resolution_clock::now();
+    for (int i = 0; i < 1000; i++) {
+        db.write_record(i, Record{ i, "Test", "User", i, false });
+    }
+    auto sync_write_end_time = std::chrono::high_resolution_clock::now();
+    auto sync_write_elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(sync_write_end_time - sync_write_start_time).count();
+    std::cout << "Sync write time (ms): " << sync_write_elapsed << std::endl;
+
+    auto async_write_start_time = std::chrono::high_resolution_clock::now();
+    for (int i = 0; i < 1000; i++) {
+        OVERLAPPED overlapped = { 0 };
+        overlapped.Offset = i * RECORD_SIZE + METADATA_SIZE;
+        overlapped.hEvent = CreateEvent(nullptr, TRUE, FALSE, nullptr);
+        db_async.async_write_record(i, Record{ i, "Test", "User", i, false }, overlapped);
+        CloseHandle(overlapped.hEvent);
+    }
+    auto async_write_end_time = std::chrono::high_resolution_clock::now();
+    auto async_write_elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(async_write_end_time - async_write_start_time).count();
+    std::cout << "Async write time (ms): " << async_write_elapsed << std::endl;
+}
 
 int main()
 {
     setlocale(LC_ALL, "Ru");
     DirectAccessFileDb db = DirectAccessFileDb("database", 1024);
+    DirectAccessFileDb db_async = DirectAccessFileDb("database_async", 1024);
 
-    auto sync_write_start_time = std::chrono::high_resolution_clock::now();
+    //for (int i = 0; i < 1024; ++i) {
+    //    db.write_record(i, Record{ i, "Test", "TestSurname", 19, false });
+    //}
 
-    for (int i = 0; i < 1000; i++) {
-        db.write_record(i,Record{ i, "Test", "User", i, false });
-    }
+    int choice = 0;
+    do {
+        show_menu();
+        std::cin >> choice;
 
-    auto sync_write_end_time = std::chrono::high_resolution_clock::now();
-    auto sync_write_elapsed = std::chrono::duration_cast<std::chrono::microseconds>(sync_write_end_time - sync_write_start_time).count();
-    std::cout << "Sync write in ms: " << sync_write_elapsed << std::endl;
-
-    auto sync_read_start_time = std::chrono::high_resolution_clock::now();
-
-    for (int i = 0; i < db.get_records_size(); i++) {
-        Record* record = db.read_record(i);
-        if (record != nullptr) {
-            //std::cout << record->id << std::endl;
+        switch (choice) {
+        case 1:
+            add_record(db);
+            break;
+        case 2:
+            display_records(db);
+            break;
+        case 3:
+            delete_record(db);
+            break;
+        case 4:
+        {
+            DirectAccessFileDb db2 = DirectAccessFileDb("database2", 1024);
+            DirectAccessFileDb db2_async = DirectAccessFileDb("databasу2_async", 1024);
+            performance_test(db2, db2_async);
+            break;
         }
-    }
-    auto sync_read_end_time = std::chrono::high_resolution_clock::now();
-    auto sync_read_elapsed = std::chrono::duration_cast<std::chrono::microseconds>(sync_read_end_time - sync_read_start_time).count();
-    std::cout << "Sync read in ms: " << sync_read_elapsed << std::endl;
-
-    DirectAccessFileDb db2 = DirectAccessFileDb("database2", 1024);
-
-    auto async_write_start_time = std::chrono::high_resolution_clock::now();
-
-    for (int i = 0; i < 1000; i++) {
-        OVERLAPPED overlapped = { 0 };
-        overlapped.Offset = i * RECORD_SIZE + METADATA_SIZE;
-        overlapped.hEvent = CreateEvent(nullptr, TRUE, FALSE, nullptr);
-        db2.async_write_record(i, Record{ i, "Test", "User", i, false }, overlapped);
-        CloseHandle(overlapped.hEvent);
-    }
-
-    auto async_write_end_time = std::chrono::high_resolution_clock::now();
-    auto async_write_elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(async_write_end_time - async_write_start_time).count();
-    std::cout << "Async writing operation in ms: " << async_write_elapsed << std::endl;
-
-    auto async_read_start_time = std::chrono::high_resolution_clock::now();
-    std::cout << db2.get_records_size() << std::endl;
-    for (int i = 0; i < db2.get_records_size(); i++) {
-        OVERLAPPED overlapped = { 0 };
-        overlapped.Offset = i * RECORD_SIZE + METADATA_SIZE;
-        overlapped.hEvent = CreateEvent(nullptr, TRUE, FALSE, nullptr);
-        if (!overlapped.hEvent) {
-            std::cerr << "Ошибка создания события: " << GetLastError() << std::endl;
-            continue;
+        case 5:
+            std::cout << "Exiting..." << std::endl;
+            break;
+        default:
+            std::cout << "Invalid option. Try again." << std::endl;
+            break;
         }
-        auto record = db2.async_read_record(i, overlapped);
-        if (record != nullptr) {
-        }
-        CloseHandle(overlapped.hEvent);
-    }
-
-    auto async_read_end_time = std::chrono::high_resolution_clock::now();
-    auto async_read_elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(async_read_end_time - async_read_start_time).count();
-    std::cout << "Async reading operation in ms: " << async_read_elapsed << std::endl;
-
+    } 
+    while (choice != 5);
     return 0;
 }
