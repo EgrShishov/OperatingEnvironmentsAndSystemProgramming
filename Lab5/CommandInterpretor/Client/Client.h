@@ -1,6 +1,13 @@
 #pragma once
 #include <string>
-#include <WinSock2.h>
+#include <iostream>
+#include <cstdlib>
+#include <winsock2.h>
+#include <ws2tcpip.h>
+
+#define DEFAULT_SERVER_PORT 10000
+#define DEFAULT_CLIENT_PORT 10001
+#define DEFAULT_BUF_LEN 512
 
 class Client
 {
@@ -8,7 +15,11 @@ public:
 	Client();
 	~Client();
 
-	bool connect(int port);
-	std::string send_command(const std::string& command);
+	bool connect_to_server(int port);
+	bool send_command(const std::string& command);
 	std::string recieve_result();
+
+private:
+	int client_port;
+	SOCKET connect_socket;
 };
