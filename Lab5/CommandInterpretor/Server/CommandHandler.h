@@ -3,6 +3,9 @@
 #include <vector>
 #include <sstream>
 #include <fstream>
+#include <windows.h>
+#include <locale>
+#include <codecvt>
 
 class CommandHandler
 {
