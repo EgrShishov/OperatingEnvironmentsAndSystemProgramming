@@ -5,7 +5,11 @@
 #include <fstream>
 #include <windows.h>
 #include <locale>
+#include <memory>
+#include <cstdio>
+#include <stdexcept>
 #include <codecvt>
+#include <array>
 
 class CommandHandler
 {
@@ -34,5 +38,7 @@ private:
 	std::string execute_clear();
 	std::string WCHAR_to_string(const wchar_t* wstr);
 	LPWSTR convert_string_to_LPWSTR(const std::string& input);
+
+	std::vector<std::string> command_history;
 };
 

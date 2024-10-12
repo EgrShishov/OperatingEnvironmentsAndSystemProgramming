@@ -148,6 +148,8 @@ std::string CommandHandler::handle_command(const std::string& command) {
 
     result = execute_command(parsing_result.first, parsing_result.second);
 
+    command_history.push_back(command);
+
 	return result;
 }
 
@@ -383,7 +385,7 @@ std::string CommandHandler::execute_cp(const std::vector<std::string>& args) {
     if (args.empty()) {
         return "No input or output file specifed";
     }
-    std::string command = "cp " + args[0] + " " + args[1];
+    std::string command = "copy " + args[0] + " " + args[1];
     return execute_system_command(command);
 }
 
@@ -391,7 +393,7 @@ std::string CommandHandler::execute_mv(const std::vector<std::string>& args) {
     if (args.empty()) {
         return "No source or destination dir specifed";
     }
-    std::string command = "mv " + args[0] + " " + args[1];
+    std::string command = "move " + args[0] + " " + args[1];
     return execute_system_command(command);
 }
 
@@ -399,7 +401,7 @@ std::string CommandHandler::execute_grep(const std::vector<std::string>& args) {
     if (args.empty()) {
         return "No file or pattern specifed";
     }
-    std::string command = "grep " + args[0] + " " + args[1];
+    std::string command = "findstr " + args[0] + " " + args[1];
     return execute_system_command(command);
 }
 
@@ -407,7 +409,7 @@ std::string CommandHandler::execute_find(const std::vector<std::string>& args) {
     if (args.empty()) {
         return "No filename to find specifed";
     }
-    std::string command = "find " + args[0];
+    std::string command = "dir /s /b " + args[0];
     return execute_system_command(command);
 }
 
@@ -415,13 +417,20 @@ std::string CommandHandler::execute_vi(const std::vector<std::string>& args) {
     if (args.empty()) {
         return "No filename specifed";
     }
-    std::string command = "vi " + args[0];
+    std::string command = "notepad " + args[0];
     return execute_system_command(command);
 }
 
 std::string CommandHandler::execute_history() {
-    std::string command = "history";
-    return execute_system_command(command);
+    if (command_history.empty()) {
+        return "No commands executed yet.";
+    }
+
+    std::string history;
+    for (size_t i = 0; i < command_history.size(); ++i) {
+        history += std::to_string(i + 1) + ": " + command_history[i] + "\n";
+    }
+    return history;
 }
 
 std::string CommandHandler::execute_clear() {
