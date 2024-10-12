@@ -7,7 +7,9 @@
 
 #define DEFAULT_SERVER_PORT 10000
 #define DEFAULT_CLIENT_PORT 10001
-#define DEFAULT_BUF_LEN 512
+#define DEFAULT_BUF_LEN 524288
+
+#pragma comment(lib, "Ws2_32.lib")
 
 class Client
 {

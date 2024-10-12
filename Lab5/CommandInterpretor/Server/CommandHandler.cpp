@@ -1,4 +1,5 @@
 #include "CommandHandler.h"
+#include <iostream>
 
 CommandHandler::CommandHandler() {
 
@@ -140,6 +141,13 @@ CommandHandler::~CommandHandler() {
 std::string CommandHandler::handle_command(const std::string& command) {
 	std::string result;
 
+    auto parsing_result = parse_command(command);
+    if (parsing_result.first.empty()) {
+        return "";
+    }
+
+    result = execute_command(parsing_result.first, parsing_result.second);
+
 	return result;
 }
 
@@ -195,23 +203,48 @@ std::string CommandHandler::execute_command(const std::string& command, const st
 	return exec_result;
 }
 
-std::string execute_ls(const std::vector<std::string>& args) {
-	std::string dir = args.empty() ? "." : args[0];
+std::string CommandHandler::execute_ls(const std::vector<std::string>& args) {
+    std::string dir;
+
+    if (args.empty() || args[0] == ".") {
+        char buffer[MAX_PATH];
+        if (GetCurrentDirectoryA(MAX_PATH, buffer)) {
+            dir = buffer;
+        }
+        else {
+            return "Unable to get current directory";
+        }
+    }
+    else {
+        dir = args[0];
+    }
+
+    dir += "\\*";
+
     WIN32_FIND_DATA findFileData;
-    HANDLE hFile = FindFirstFile(convert_string_to_LPWSTR(dir + "\\*"), &findFileData);
+    LPWSTR root = convert_string_to_LPWSTR(dir);
+    HANDLE hFile = FindFirstFile(root, &findFileData);
 
     if (hFile == INVALID_HANDLE_VALUE) {
+        std::cerr << root;
         return "Directory not found";
     }
 
     std::string exec_result;
+    
     do {
-        exec_result += WCHAR_to_string(findFileData.cFileName) + "\n";
+        std::string fileName = WCHAR_to_string(findFileData.cFileName);
+        if (fileName != "." && fileName != "..") {
+            exec_result += fileName + "\n";
+        }
     } while (FindNextFile(hFile, &findFileData));
+    
+    CloseHandle(hFile);
+
     return exec_result;
 }
 
-std::string execute_cd(const std::vector<std::string>& args) {
+std::string CommandHandler::execute_cd(const std::vector<std::string>& args) {
     if (args.empty()) {
         return "No directory specified";
     }
@@ -225,7 +258,7 @@ std::string execute_cd(const std::vector<std::string>& args) {
     }
 }
 
-std::string execute_mkdir(const std::vector<std::string>& args) {
+std::string CommandHandler::execute_mkdir(const std::vector<std::string>& args) {
     if (args.empty()) {
         return "No directory name specified";
     }
@@ -237,7 +270,7 @@ std::string execute_mkdir(const std::vector<std::string>& args) {
     }
 }
 
-std::string execute_touch(const std::vector<std::string>& args) {
+std::string CommandHandler::execute_touch(const std::vector<std::string>& args) {
     if (args.empty()) {
         return "No filename specified";
     }
@@ -259,7 +292,7 @@ std::string execute_touch(const std::vector<std::string>& args) {
     }
 }
 
-std::string execute_rm(const std::vector<std::string>& args) {
+std::string CommandHandler::execute_rm(const std::vector<std::string>& args) {
     if (args.empty()) {
         return "No filename specified";
     }
@@ -271,7 +304,25 @@ std::string execute_rm(const std::vector<std::string>& args) {
     }
 }
 
-std::string execute_cat(const std::vector<std::string>& args) {
+std::string get_error_message(DWORD error_code) {
+    LPVOID lpMsgBuf;
+
+    FormatMessage(
+        FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS,
+        NULL,
+        error_code,
+        MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT),
+        (LPWSTR)&lpMsgBuf,
+        0, NULL);
+
+    std::wstring message_wstr = (LPWSTR)lpMsgBuf;
+    std::string message(message_wstr.begin(), message_wstr.end());
+    LocalFree(lpMsgBuf);
+
+    return message;
+}
+
+std::string CommandHandler::execute_cat(const std::vector<std::string>& args) {
     if (args.empty()) {
         return "No filename specified";
     }
@@ -286,25 +337,40 @@ std::string execute_cat(const std::vector<std::string>& args) {
         NULL);
 
     if (hFile == INVALID_HANDLE_VALUE) {
-        return "Cannot open file: " + GetLastError();
+        DWORD error_code = GetLastError();
+        return "Cannot open file: " + get_error_message(error_code);
     }
 
     LARGE_INTEGER fileSize;
-    GetFileSizeEx(hFile, &fileSize);
-
-    char* buffer = new char[fileSize.QuadPart];
-    DWORD bytes_readed;
-
-    if (!ReadFile(hFile, buffer, sizeof(buffer), &bytes_readed, nullptr)) {
+    if (!GetFileSizeEx(hFile, &fileSize)) {
+        DWORD error_code = GetLastError();
         CloseHandle(hFile);
-        return "Error in reading file: " + GetLastError();
+        return "Error getting file size: " + get_error_message(error_code);
+    }
+    if (fileSize.QuadPart == 0) {
+        CloseHandle(hFile);
+        return "File is empty";
+    }
+
+    char* buffer = new char[fileSize.QuadPart + 1];
+    DWORD bytes_readed = 0;
+
+    if (!ReadFile(hFile, buffer, fileSize.QuadPart, &bytes_readed, nullptr)) {
+        DWORD error_code = GetLastError();
+        CloseHandle(hFile);
+        delete[] buffer;
+        return "Error reading file: " + get_error_message(error_code);
     }
 
     CloseHandle(hFile);
-    return std::string(buffer);
+    buffer[bytes_readed] = '\0';
+    std::string file_content(buffer);
+    delete[] buffer;
+
+    return file_content;
 }
 
-std::string execute_pwd() {
+std::string CommandHandler::execute_pwd() {
     char buffer[MAX_PATH];
     if (GetCurrentDirectoryA(MAX_PATH, buffer)) {
         return std::string(buffer);
@@ -313,7 +379,7 @@ std::string execute_pwd() {
     }
 }
 
-std::string execute_cp(const std::vector<std::string>& args) {
+std::string CommandHandler::execute_cp(const std::vector<std::string>& args) {
     if (args.empty()) {
         return "No input or output file specifed";
     }
@@ -321,7 +387,7 @@ std::string execute_cp(const std::vector<std::string>& args) {
     return execute_system_command(command);
 }
 
-std::string execute_mv(const std::vector<std::string>& args) {
+std::string CommandHandler::execute_mv(const std::vector<std::string>& args) {
     if (args.empty()) {
         return "No source or destination dir specifed";
     }
@@ -329,7 +395,7 @@ std::string execute_mv(const std::vector<std::string>& args) {
     return execute_system_command(command);
 }
 
-std::string execute_grep(const std::vector<std::string>& args) {
+std::string CommandHandler::execute_grep(const std::vector<std::string>& args) {
     if (args.empty()) {
         return "No file or pattern specifed";
     }
@@ -337,7 +403,7 @@ std::string execute_grep(const std::vector<std::string>& args) {
     return execute_system_command(command);
 }
 
-std::string execute_find(const std::vector<std::string>& args) {
+std::string CommandHandler::execute_find(const std::vector<std::string>& args) {
     if (args.empty()) {
         return "No filename to find specifed";
     }
@@ -345,7 +411,7 @@ std::string execute_find(const std::vector<std::string>& args) {
     return execute_system_command(command);
 }
 
-std::string execute_vi(const std::vector<std::string>& args) {
+std::string CommandHandler::execute_vi(const std::vector<std::string>& args) {
     if (args.empty()) {
         return "No filename specifed";
     }
@@ -353,17 +419,17 @@ std::string execute_vi(const std::vector<std::string>& args) {
     return execute_system_command(command);
 }
 
-std::string execute_history() {
+std::string CommandHandler::execute_history() {
     std::string command = "history";
     return execute_system_command(command);
 }
 
-std::string execute_clear() {
+std::string CommandHandler::execute_clear() {
     std::string command = "cls";
     return execute_system_command(command);
 }
 
-std::string execute_system_command(const std::string& command) {
+std::string CommandHandler::execute_system_command(const std::string& command) {
 	std::string result = command + " > temp_output.txt";
 	system(result.c_str());
 
@@ -389,15 +455,19 @@ std::pair<std::string, std::vector<std::string>> CommandHandler::parse_command(c
 	return { command, args };
 }
 
-LPWSTR convert_string_to_LPWSTR(const std::string& input) {
-    int size = MultiByteToWideChar(CP_UTF8, 0, input.c_str(), -1, nullptr, 0);
-    std::vector<wchar_t> buffer(size);
 
-    MultiByteToWideChar(CP_UTF8, 0, input.c_str(), -1, buffer.data(), size);
-    return buffer.data();
+LPWSTR CommandHandler::convert_string_to_LPWSTR(const std::string& input) {
+    int length = MultiByteToWideChar(CP_ACP, 0, input.c_str(), -1, NULL, 0);
+    wchar_t* wideStr = new wchar_t[length];
+    MultiByteToWideChar(CP_ACP, 0, input.c_str(), -1, wideStr, length);
+    LPWSTR lpwstr = wideStr;
+    return lpwstr;
 }
 
-std::string WCHAR_to_string(const wchar_t* wstr) {
-    std::wstring_convert<std::codecvt_utf8<wchar_t>> converter;
-    return converter.to_bytes(wstr);
+std::string CommandHandler::WCHAR_to_string(const wchar_t* wstr) {
+    int size = WideCharToMultiByte(CP_UTF8, 0, wstr, -1, nullptr, 0, nullptr, nullptr);
+    std::string result(size, 0);
+
+    WideCharToMultiByte(CP_UTF8, 0, wstr, -1, &result[0], size, nullptr, nullptr);
+    return result;
 }
