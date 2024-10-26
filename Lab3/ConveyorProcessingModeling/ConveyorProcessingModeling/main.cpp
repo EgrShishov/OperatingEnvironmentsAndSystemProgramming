@@ -91,6 +91,9 @@ public:
 		
 		DWORD bytes_written;
 		WriteFile(hWritePipe, data.data(), data.size() * sizeof(int), &bytes_written, nullptr);
+		for (int el : data) {
+			std::cout << el << "\n";
+		}
 		std::cout << "Данные отправлены на сортировку: " << bytes_written << " байт" << std::endl;
 		
 		CloseHandle(hWritePipe);

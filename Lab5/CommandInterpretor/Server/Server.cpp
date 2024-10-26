@@ -106,7 +106,7 @@ DWORD WINAPI handle_client(LPVOID clientSocketPtr) {
             break;
         }
 
-       // std::cout << "Received command from client: " << command << std::endl;
+       std::cout << "Received command from client: " << command << std::endl;
 
         std::string result = execute_command(command);
        // std::cout << "Command executed: " << result << std::endl;
@@ -128,7 +128,7 @@ std::string execute_command(const std::string& command) {
 bool send_result(SOCKET socket, const std::string& result) {
     int iResult = send(socket, result.c_str(), result.length(), 0);
     if (iResult != SOCKET_ERROR) {
-       // std::cout << iResult << " bytes sent to client" << std::endl;
+        std::cout << iResult << " bytes sent to client" << std::endl;
         return true;
     }
     else {
