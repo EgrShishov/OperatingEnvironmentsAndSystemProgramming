@@ -180,14 +180,6 @@ bool findKeyInSnapshot(const RegistrySnapshot& snapshot, const std::string& keyT
     }
 }
 
-void enableANSI() {
-    HANDLE hOut = GetStdHandle(STD_OUTPUT_HANDLE);
-    DWORD dwMode = 0;
-    GetConsoleMode(hOut, &dwMode);
-    dwMode |= ENABLE_VIRTUAL_TERMINAL_PROCESSING;
-    SetConsoleMode(hOut, dwMode);
-}
-
 std::string selectRegistrySubKey(const HKEY rootKey) {
     HKEY hKey;
     if (RegOpenKeyExA(rootKey, "", 0, KEY_READ, &hKey) != ERROR_SUCCESS) {
@@ -247,7 +239,7 @@ HKEY selectRootKey() {
 }
 
 int main() {
-    enableANSI();
+    setlocale(LC_ALL, "Ru");
 
     const std::string filename = "snapshot.reg";
     const std::string inverse_filename = "reverse.reg";
